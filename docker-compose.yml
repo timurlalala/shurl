@@ -1,12 +1,16 @@
 services:
-#  db:
-#    image: postgres:17
-#    container_name: db_app
-#    restart: always
-#    command: -p 1221
-#    expose:
-#      - 1221
-#
+  db:
+    image: postgres:17
+    container_name: db_app
+    restart: always
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
+    command: -p ${DB_PORT}
+    expose:
+      - ${DB_PORT}
+
 #  redis:
 #    image: redis:7
 #    container_name: redis_app
@@ -21,8 +25,8 @@ services:
     command: [ "/fastapi_app/docker/app.sh" ]
     ports:
       - "9999:8000"
-#    depends_on:
-#      - db
+    depends_on:
+      - db
 #      - redis
 
 #  celery:
