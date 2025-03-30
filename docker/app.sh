@@ -1,5 +1,6 @@
 #!/bin/bash
 
+sleep 3 # Wait for the database to be ready
 
 alembic upgrade head
 
