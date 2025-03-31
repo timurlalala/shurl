@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from shurl.router import router as shurl_router
 import uvicorn
+import logging
 
+logging.basicConfig(level=logging.DEBUG)
 
 app = FastAPI()
 

@@ -4,10 +4,8 @@ from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
-
 class Link(Base):
     __tablename__ = 'links'
-
     id = Column(Integer, primary_key=True)
     original_url = Column(String, nullable=False, index=True)
     short_url = Column(String, nullable=False, unique=True, index=True)

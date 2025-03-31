@@ -1,8 +1,10 @@
 #!/bin/bash
 
-sleep 3 # Wait for the database to be ready
+sleep 2 # Wait for the database to be ready
 
 alembic upgrade head
+
+sleep 1
 
 cd src || exit
 

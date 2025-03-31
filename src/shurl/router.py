@@ -1,15 +1,19 @@
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi import APIRouter, HTTPException, Depends, status, Query, Path
+from fastapi.responses import RedirectResponse
+
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
 
 from typing_extensions import Annotated
 from datetime import datetime
-from shurl.models import ShortenedItem
-from database import get_async_session
-from shurl.utils import generate_random_string
-from shurl.schemas import Link
 from logging import getLogger
+
+from database import get_async_session
+from shurl.utils import generate_random_string, validate_and_fix_url
+from shurl.schemas import Link
+from shurl.models import ShortenedItem
+
 
 logger = getLogger('shurl_router')
 
@@ -25,6 +29,11 @@ async def shorten_link(original_url: Annotated[str, Query()],
                        expires_at: Annotated[datetime | None, Query()] = None):
     """Создает короткую ссылку."""
     try:
+
+        original_url, url_fixed = validate_and_fix_url(original_url)
+        if url_fixed:
+            logger.debug(f"Fixed url to {original_url}")
+
         if custom_alias is not None:
             short_code = custom_alias
         else:
@@ -53,10 +62,25 @@ async def shorten_link(original_url: Annotated[str, Query()],
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-# GET /links/{short_code} – перенаправляет на оригинальный URL.
 @router.get("/{short_code}")
-async def redirect_to_original(short_code: str):
-    pass
+async def redirect_to_original(short_code: Annotated[str, Path(max_length=16)],
+                               session: Annotated[AsyncSession, Depends(get_async_session)]):
+    """Перенаправляет на оригинальный URL."""
+    try:
+        query = select(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
+        result = await session.execute(query)
+        await session.commit()
+        link = result.one()
+        if link:
+            if link.expires_at is not None and link.expires_at < datetime.now():
+                raise HTTPException(status_code=status.HTTP_410_GONE, detail="Link has expired")
+            return RedirectResponse(url=link.original_url, status_code=302)
+        else:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
+    except HTTPException as http_exc:
+        raise http_exc
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 # DELETE /links/{short_code} – удаляет связь.
