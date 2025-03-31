@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends, status, Query, Path
 from fastapi.responses import RedirectResponse
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert, select, delete
-from sqlalchemy.exc import IntegrityError, NoResultFound, MultipleResultsFound
+from sqlalchemy import insert, select, delete, update
+from sqlalchemy.exc import IntegrityError, NoResultFound
 
 from typing_extensions import Annotated
 from datetime import datetime
@@ -30,9 +30,7 @@ async def shorten_link(original_url: Annotated[str, Query()],
     """Создает короткую ссылку."""
     try:
 
-        original_url, url_fixed = validate_and_fix_url(original_url)
-        if url_fixed:
-            logger.debug(f"Fixed url to {original_url}")
+        original_url = validate_and_fix_url(original_url)
 
         if custom_alias is not None:
             short_code = custom_alias
@@ -83,7 +81,6 @@ async def redirect_to_original(short_code: Annotated[str, Path(max_length=16)],
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-# DELETE /links/{short_code} – удаляет связь.
 @router.delete("/{short_code}")
 async def delete_link(short_code: Annotated[str, Path(max_length=16)],
                       session: Annotated[AsyncSession, Depends(get_async_session)]):
@@ -92,26 +89,45 @@ async def delete_link(short_code: Annotated[str, Path(max_length=16)],
         query = select(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
         result = await session.execute(query)
         await session.commit()
-        try:
-            link = result.one()
-        except NoResultFound:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
-
+        result.one()
         delete_query = delete(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
         await session.execute(delete_query)
         await session.commit()
         return {"message": "Link deleted successfully"}
+    except NoResultFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
-
-# PUT /links/{short_code} – обновляет короткий адрес ссылки
 @router.put("/{short_code}")
-async def update_link(short_code: str, original_url: str):
-    pass
+async def update_link(short_code: Annotated[str, Path(max_length=16)],
+                      original_url: Annotated[str, Query()],
+                      session: Annotated[AsyncSession, Depends(get_async_session)]):
+    """Обновляет длинный адрес, на который ведет ссылка"""
+    try:
+        query = select(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
+        result = await session.execute(query)
+        await session.commit()
+        result.one()
+
+        original_url = validate_and_fix_url(original_url)
+
+        update_query = (
+            update(Link.__table__)
+            .where(Link.__table__.c.short_url == short_code)  # type: ignore
+            .values(original_url=original_url)
+        )
+        await session.execute(update_query)
+        await session.commit()
+        return {"message": "Link updated successfully"}
+
+    except NoResultFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 # GET /links/{short_code}/stats - Статистика по ссылке
