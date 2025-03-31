@@ -8,11 +8,14 @@ from sqlalchemy.exc import IntegrityError, NoResultFound
 from typing_extensions import Annotated
 from datetime import datetime, timezone
 from logging import getLogger
+import json
 
 from database import get_async_session
 from shurl.utils import generate_random_string, validate_and_fix_url
 from shurl.schemas import Link
 from shurl.models import ShortenedItem
+
+from redis_caching import r, write_clicks_to_db
 
 
 logger = getLogger('shurl_router')
@@ -69,7 +72,7 @@ async def search_by_original_url(original_url: Annotated[str, Query()],
 
         query = select(Link.__table__).where(
             and_(Link.__table__.c.original_url == original_url),
-            or_(Link.__table__.c.expires_at is None, Link.__table__.c.expires_at > datetime.now(timezone.utc))
+            or_(Link.__table__.c.expires_at.is_(None), Link.__table__.c.expires_at > datetime.now(timezone.utc))
         ) # type: ignore
 
         logger.debug(query)
@@ -94,12 +97,43 @@ async def redirect_to_original(short_code: Annotated[str, Path(max_length=16)],
                                session: Annotated[AsyncSession, Depends(get_async_session)]):
     """Перенаправляет на оригинальный URL."""
     try:
+        cache_key = f"short_url:{short_code}"
+        clicks_key = f"clicks:{short_code}"
+        cached_data = await r.get(cache_key)
+
+        if cached_data:
+            link_data = json.loads(cached_data)
+            clicks = int(await r.get(clicks_key))
+
+            if link_data["expires_at"] and datetime.fromisoformat(link_data["expires_at"]) < datetime.now(timezone.utc):
+                logger.debug('cached link is expired')
+                await r.delete(cache_key)
+
+                await write_clicks_to_db(short_code, clicks)
+                await r.delete(clicks_key)
+            else:
+                logger.debug('using cached')
+                await r.set(clicks_key, clicks+1)
+                return RedirectResponse(url=link_data["original_url"], status_code=302)
+
+        # Если кэш пустой
         query = select(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
         result = await session.execute(query)
         await session.commit()
         link = result.one()
+
         if link.expires_at is not None and link.expires_at < datetime.now(timezone.utc):
             raise HTTPException(status_code=status.HTTP_410_GONE, detail="Link has expired")
+
+        # Сохраняем данные в кэш
+        link_data = {
+            "original_url": link.original_url,
+            "expires_at": link.expires_at.isoformat() if link.expires_at else None
+        }
+
+        await r.set(cache_key, json.dumps(link_data), ex=5)  # Кэшируем на 60 секунд
+        await r.set(clicks_key, link.clicks + 1)
+
         return RedirectResponse(url=link.original_url, status_code=302)
     except NoResultFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
