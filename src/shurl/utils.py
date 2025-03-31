@@ -1,6 +1,5 @@
 from string import ascii_lowercase, ascii_uppercase, digits
 from random import choices
-from typing import Tuple
 from logging import getLogger
 
 logger = getLogger('shurl_utils')
@@ -12,6 +11,6 @@ def generate_random_string(length:int = 8) -> str:
 
 def validate_and_fix_url(url:str) -> str:
     if not url.startswith(('http://', 'https://')):
-        url = 'http://' + url
+        url = 'https://' + url
         logger.debug(f"Fixed url to {url}")
     return url

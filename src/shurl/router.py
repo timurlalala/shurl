@@ -2,11 +2,11 @@ from fastapi import APIRouter, HTTPException, Depends, status, Query, Path
 from fastapi.responses import RedirectResponse
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import insert, select, delete, update
+from sqlalchemy import insert, select, delete, update, or_, and_
 from sqlalchemy.exc import IntegrityError, NoResultFound
 
 from typing_extensions import Annotated
-from datetime import datetime
+from datetime import datetime, timezone
 from logging import getLogger
 
 from database import get_async_session
@@ -57,6 +57,35 @@ async def shorten_link(original_url: Annotated[str, Query()],
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        logger.warning(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.get("/search")
+async def search_by_original_url(original_url: Annotated[str, Query()],
+                                 session: Annotated[AsyncSession, Depends(get_async_session)]):
+    try:
+        original_url = validate_and_fix_url(original_url)
+
+        query = select(Link.__table__).where(
+            and_(Link.__table__.c.original_url == original_url),
+            or_(Link.__table__.c.expires_at is None, Link.__table__.c.expires_at > datetime.now(timezone.utc))
+        ) # type: ignore
+
+        logger.debug(query)
+
+        result = await session.execute(query)
+        await session.commit()
+        links = result.all()
+        return [{
+            "short_url": l.short_url,
+            "created_at": l.created_at,
+            "expires_at": l.expires_at
+        } for l in links]
+    except NoResultFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Original URL not found")
+    except Exception as e:
+        logger.warning(e.args)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
@@ -69,15 +98,15 @@ async def redirect_to_original(short_code: Annotated[str, Path(max_length=16)],
         result = await session.execute(query)
         await session.commit()
         link = result.one()
-        if link:
-            if link.expires_at is not None and link.expires_at < datetime.now():
-                raise HTTPException(status_code=status.HTTP_410_GONE, detail="Link has expired")
-            return RedirectResponse(url=link.original_url, status_code=302)
-        else:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
+        if link.expires_at is not None and link.expires_at < datetime.now(timezone.utc):
+            raise HTTPException(status_code=status.HTTP_410_GONE, detail="Link has expired")
+        return RedirectResponse(url=link.original_url, status_code=302)
+    except NoResultFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        logger.warning(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
@@ -99,6 +128,7 @@ async def delete_link(short_code: Annotated[str, Path(max_length=16)],
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
+        logger.warning(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
@@ -127,6 +157,7 @@ async def update_link(short_code: Annotated[str, Path(max_length=16)],
     except NoResultFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
     except Exception as e:
+        logger.warning(e)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
@@ -135,8 +166,3 @@ async def update_link(short_code: Annotated[str, Path(max_length=16)],
 async def get_link_stats(short_code: str):
     pass
 
-
-# GET /links/search?original_url={url} - поиск по оригинальному URL
-@router.get("/search")
-async def search_by_original_url(original_url: str):
-    pass
