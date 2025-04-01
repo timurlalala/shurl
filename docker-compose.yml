@@ -1,18 +1,22 @@
 services:
-#  db:
-#    image: postgres:17
-#    container_name: db_app
-#    restart: always
-#    command: -p 1221
-#    expose:
-#      - 1221
-#
-#  redis:
-#    image: redis:7
-#    container_name: redis_app
-#    command: --port 1331
-#    expose:
-#      - 1331
+  db:
+    image: postgres:17
+    container_name: db_app
+    restart: always
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+      - POSTGRES_DB=${DB_NAME}
+    command: -p ${DB_PORT}
+    expose:
+      - ${DB_PORT}
+
+  redis:
+    image: redis:7
+    container_name: redis_app
+    command: --port ${REDIS_PORT} --requirepass ${REDIS_PASSWORD} --notify-keyspace-events Ex
+    expose:
+      - ${REDIS_PORT}
 
   app:
     build:
@@ -20,26 +24,21 @@ services:
     container_name: fastapi_app
     command: [ "/fastapi_app/docker/app.sh" ]
     ports:
-      - "9999:8000"
-#    depends_on:
-#      - db
-#      - redis
+      - ${APP_PORT}:8000
+    depends_on:
+      - db
+      - redis
 
-#  celery:
-#    build:
-#      context: .
-#    container_name: celery_app
-#    command: [ "/fastapi_app/docker/celery.sh", "celery" ]
-#    depends_on:
-#      - redis
-#
-#  flower:
-#    build:
-#      context: .
-#    container_name: flower_app
-#    command: [ "/fastapi_app/docker/celery.sh", "flower" ]
-#    depends_on:
-#      - redis
-#      - celery
-#    ports:
-#      - "8888:5555"
+  celery_worker:
+    build: .
+    command: [ "/fastapi_app/docker/celery_worker.sh" ]
+    depends_on:
+      - app
+      - redis
+
+  celery_beat:
+    build: .
+    command: [ "/fastapi_app/docker/celery_beat.sh" ]
+    depends_on:
+      - app
+      - redis

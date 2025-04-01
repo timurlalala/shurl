@@ -1,2 +1,5 @@
 .venv
 .idea
+DESCRIPTION.md
+.env
+__pycache__
