@@ -30,7 +30,6 @@ async def process_expired_keys():
                 clicks_key = f"clicks:{short_code}"
                 try:
                     # Получаем данные из Redis
-
                     clicks = int(await r.get(clicks_key))
 
                     # Записываем данные в базу данных

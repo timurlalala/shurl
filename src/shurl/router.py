@@ -103,20 +103,20 @@ async def redirect_to_original(short_code: Annotated[str, Path(max_length=16)],
 
         if cached_data:
             link_data = json.loads(cached_data)
-            clicks = int(await r.get(clicks_key))
 
             if link_data["expires_at"] and datetime.fromisoformat(link_data["expires_at"]) < datetime.now(timezone.utc):
                 logger.debug('cached link is expired')
                 await r.delete(cache_key)
 
+                clicks = int(await r.get(clicks_key))
                 await write_clicks_to_db(short_code, clicks)
                 await r.delete(clicks_key)
             else:
                 logger.debug('using cached')
-                await r.set(clicks_key, clicks+1)
+                await r.incr(clicks_key)
                 return RedirectResponse(url=link_data["original_url"], status_code=302)
 
-        # Если кэш пустой
+        # Если кэш пустой или ссылка просрочена, проверим бд (вдруг ссылку обновили?)
         query = select(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
         result = await session.execute(query)
         await session.commit()
@@ -131,7 +131,7 @@ async def redirect_to_original(short_code: Annotated[str, Path(max_length=16)],
             "expires_at": link.expires_at.isoformat() if link.expires_at else None
         }
 
-        await r.set(cache_key, json.dumps(link_data), ex=5)  # Кэшируем на 60 секунд
+        await r.set(cache_key, json.dumps(link_data), ex=60)  # Кэшируем на 60 секунд
         await r.set(clicks_key, link.clicks + 1)
 
         return RedirectResponse(url=link.original_url, status_code=302)

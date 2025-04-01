@@ -14,3 +14,5 @@ async def write_clicks_to_db(short_code: str, clicks: int):
         except Exception as e:
             await session.rollback()
             raise e
+        finally:
+            await session.close()

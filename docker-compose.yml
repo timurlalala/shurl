@@ -29,21 +29,16 @@ services:
       - db
       - redis
 
-#  celery:
-#    build:
-#      context: .
-#    container_name: celery_app
-#    command: [ "/fastapi_app/docker/celery.sh", "celery" ]
-#    depends_on:
-#      - redis
-#
-#  flower:
-#    build:
-#      context: .
-#    container_name: flower_app
-#    command: [ "/fastapi_app/docker/celery.sh", "flower" ]
-#    depends_on:
-#      - redis
-#      - celery
-#    ports:
-#      - "8888:5555"
+  celery_worker:
+    build: .
+    command: [ "/fastapi_app/docker/celery_worker.sh" ]
+    depends_on:
+      - app
+      - redis
+
+  celery_beat:
+    build: .
+    command: [ "/fastapi_app/docker/celery_beat.sh" ]
+    depends_on:
+      - app
+      - redis
