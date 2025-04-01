@@ -15,7 +15,7 @@ from shurl.utils import generate_random_string, validate_and_fix_url
 from shurl.schemas import Link
 from shurl.models import ShortenedItem
 
-from redis_caching import r, write_clicks_to_db
+from redis_caching import r, write_stats_to_db
 
 
 logger = getLogger('shurl_router')
@@ -83,6 +83,7 @@ async def search_by_original_url(original_url: Annotated[str, Query()],
         return [{
             "short_url": l.short_url,
             "created_at": l.created_at,
+            "updated_at": l.updated_at,
             "expires_at": l.expires_at
         } for l in links]
     except NoResultFound:
@@ -98,22 +99,28 @@ async def redirect_to_original(short_code: Annotated[str, Path(max_length=16)],
     """Перенаправляет на оригинальный URL."""
     try:
         cache_key = f"short_url:{short_code}"
-        clicks_key = f"clicks:{short_code}"
+        stats_key = f"stats:{short_code}"
         cached_data = await r.get(cache_key)
 
         if cached_data:
             link_data = json.loads(cached_data)
+            stats = json.loads(await r.get(stats_key))
 
             if link_data["expires_at"] and datetime.fromisoformat(link_data["expires_at"]) < datetime.now(timezone.utc):
                 logger.debug('cached link is expired')
                 await r.delete(cache_key)
 
-                clicks = int(await r.get(clicks_key))
-                await write_clicks_to_db(short_code, clicks)
-                await r.delete(clicks_key)
+                stats['last_used'] = datetime.fromisoformat(stats['last_used'])
+
+                await write_stats_to_db(short_code, stats)
+                await r.delete(stats_key)
             else:
                 logger.debug('using cached')
-                await r.incr(clicks_key)
+
+                stats['last_used'] = datetime.now(timezone.utc).isoformat()
+                stats['clicks'] = int(stats['clicks']) + 1
+
+                await r.set(stats_key, json.dumps(stats))
                 return RedirectResponse(url=link_data["original_url"], status_code=302)
 
         # Если кэш пустой или ссылка просрочена, проверим бд (вдруг ссылку обновили?)
@@ -130,11 +137,16 @@ async def redirect_to_original(short_code: Annotated[str, Path(max_length=16)],
             "original_url": link.original_url,
             "expires_at": link.expires_at.isoformat() if link.expires_at else None
         }
-
         await r.set(cache_key, json.dumps(link_data), ex=60)  # Кэшируем на 60 секунд
-        await r.set(clicks_key, link.clicks + 1)
+
+        stats = {
+            "clicks": link.clicks + 1,
+            "last_used": datetime.now(timezone.utc).isoformat()
+        }
+        await r.set(stats_key, json.dumps(stats))
 
         return RedirectResponse(url=link.original_url, status_code=302)
+
     except NoResultFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
     except HTTPException as http_exc:
@@ -153,6 +165,13 @@ async def delete_link(short_code: Annotated[str, Path(max_length=16)],
         result = await session.execute(query)
         await session.commit()
         result.one()
+
+        # удаляем кэш, если есть
+        cache_key = f"short_url:{short_code}"
+        stats_key = f"stats:{short_code}"
+        await r.delete(cache_key)
+        await r.delete(stats_key)
+
         delete_query = delete(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
         await session.execute(delete_query)
         await session.commit()
@@ -181,14 +200,14 @@ async def update_link(short_code: Annotated[str, Path(max_length=16)],
 
         # удаляем кэш, если есть
         cache_key = f"short_url:{short_code}"
-        clicks_key = f"clicks:{short_code}"
+        stats_key = f"stats:{short_code}"
         await r.delete(cache_key)
-        await r.delete(clicks_key)
+        await r.delete(stats_key)
 
         update_query = (
             update(Link.__table__)
             .where(Link.__table__.c.short_url == short_code)  # type: ignore
-            .values(original_url=original_url, clicks=0)
+            .values(original_url=original_url, clicks=0, last_used=None, updated_at=datetime.now(timezone.utc))
         )
         await session.execute(update_query)
         await session.commit()
@@ -213,17 +232,26 @@ async def get_link_stats(short_code: Annotated[str, Path(max_length=16)],
         link = result.one()
 
         # Ищем клики в кэше
-        clicks_key = f"clicks:{short_code}"
-        clicks = int(await r.get(clicks_key))
-        if clicks is None:
+        stats_key = f"stats:{short_code}"
+
+        stats = await r.get(stats_key)
+
+        if stats is None:
             clicks = link.clicks
+            last_used = link.last_used
+        else:
+            stats = json.loads(stats)
+            clicks = int(stats['clicks'])
+            last_used = datetime.fromisoformat(stats['last_used'])
 
         return {
             "short_code": link.short_url,
             "original_url": link.original_url,
-            "clicks": clicks,
             "created_at": link.created_at,
+            "updated_at": link.updated_at,
             "expires_at": link.expires_at,
+            "clicks": clicks,
+            "last_used": last_used
         }
     except NoResultFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")

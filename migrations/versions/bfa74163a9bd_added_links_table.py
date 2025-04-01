@@ -1,8 +1,8 @@
 """Added links table
 
-Revision ID: cc127beca44a
+Revision ID: bfa74163a9bd
 Revises: 
-Create Date: 2025-03-31 15:55:50.629186
+Create Date: 2025-04-01 12:22:12.732127
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'cc127beca44a'
+revision: str = 'bfa74163a9bd'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -26,7 +26,9 @@ def upgrade() -> None:
     sa.Column('original_url', sa.String(), nullable=False),
     sa.Column('short_url', sa.String(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('last_used', sa.DateTime(timezone=True), nullable=True),
     sa.Column('clicks', sa.Integer(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
