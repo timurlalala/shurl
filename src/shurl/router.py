@@ -78,8 +78,8 @@ async def search_by_original_url(original_url: Annotated[str, Query()],
         original_url = validate_and_fix_url(original_url)
 
         query = select(Link.__table__).where(
-            and_(Link.__table__.c.original_url == original_url),
-            or_(Link.__table__.c.expires_at.is_(None), Link.__table__.c.expires_at > datetime.now(timezone.utc))
+            and_(Link.__table__.c.original_url == original_url,
+            or_(Link.__table__.c.expires_at.is_(None), Link.__table__.c.expires_at > datetime.now(timezone.utc)))
         ) # type: ignore
 
         logger.debug(query)
