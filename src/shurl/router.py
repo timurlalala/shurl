@@ -179,10 +179,16 @@ async def update_link(short_code: Annotated[str, Path(max_length=16)],
 
         original_url = validate_and_fix_url(original_url)
 
+        # удаляем кэш, если есть
+        cache_key = f"short_url:{short_code}"
+        clicks_key = f"clicks:{short_code}"
+        await r.delete(cache_key)
+        await r.delete(clicks_key)
+
         update_query = (
             update(Link.__table__)
             .where(Link.__table__.c.short_url == short_code)  # type: ignore
-            .values(original_url=original_url)
+            .values(original_url=original_url, clicks=0)
         )
         await session.execute(update_query)
         await session.commit()
@@ -197,6 +203,31 @@ async def update_link(short_code: Annotated[str, Path(max_length=16)],
 
 # GET /links/{short_code}/stats - Статистика по ссылке
 @router.get("/{short_code}/stats")
-async def get_link_stats(short_code: str):
-    pass
+async def get_link_stats(short_code: Annotated[str, Path(max_length=16)],
+                      session: Annotated[AsyncSession, Depends(get_async_session)]):
+    try:
+
+        query = select(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
+        result = await session.execute(query)
+        await session.commit()
+        link = result.one()
+
+        # Ищем клики в кэше
+        clicks_key = f"clicks:{short_code}"
+        clicks = int(await r.get(clicks_key))
+        if clicks is None:
+            clicks = link.clicks
+
+        return {
+            "short_code": link.short_url,
+            "original_url": link.original_url,
+            "clicks": clicks,
+            "created_at": link.created_at,
+            "expires_at": link.expires_at,
+        }
+    except NoResultFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short code not found")
+    except Exception as e:
+        logger.warning(e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

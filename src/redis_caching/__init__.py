@@ -24,8 +24,8 @@ async def process_expired_keys():
             logger.debug(key)
 
             if key.startswith("short_url:"):
-                logger.debug('got to point 1')
-                logger.debug(type(key))
+                # logger.debug('got to point 1')
+                # logger.debug(type(key))
                 _, short_code = key.split(sep=':')
                 clicks_key = f"clicks:{short_code}"
                 try:

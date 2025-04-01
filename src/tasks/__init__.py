@@ -28,6 +28,7 @@ def delete_expired_links():
     loop = asyncio.get_event_loop()
     loop.run_until_complete(adelete_expired_links())
 
+app.conf.broker_connection_retry_on_startup = True
 
 app.conf.beat_schedule = {
     "delete-expired-links-every-10-minutes": {
