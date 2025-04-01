@@ -16,6 +16,7 @@ from shurl.models import Link
 from shurl.schemas import ShortenedItem
 
 from redis_caching import r, write_stats_to_db
+from auth.auth import User, current_active_user, current_user
 
 
 logger = getLogger('shurl_router')
@@ -28,10 +29,16 @@ router = APIRouter(
 @router.post("/shorten", status_code=status.HTTP_201_CREATED)
 async def shorten_link(original_url: Annotated[str, Query()],
                        session: Annotated[AsyncSession, Depends(get_async_session)],
+                       user: Annotated[User, Depends(current_user)],
                        custom_alias: Annotated[str | None, Query()] = None,
                        expires_at: Annotated[datetime | None, Query()] = None):
     """Создает короткую ссылку."""
     try:
+
+        if user is not None:
+            user_id = user.id
+        else:
+            user_id = None
 
         original_url = validate_and_fix_url(original_url)
 
@@ -41,7 +48,7 @@ async def shorten_link(original_url: Annotated[str, Query()],
             short_code = generate_random_string()
 
         while True:
-            shurl = ShortenedItem(short_url=short_code, original_url=original_url, expires_at=expires_at)
+            shurl = ShortenedItem(short_url=short_code, original_url=original_url, expires_at=expires_at, created_by_uuid=user_id)
             statement = insert(Link).values(**shurl.model_dump())
             try:
                 await session.execute(statement)
@@ -158,13 +165,17 @@ async def redirect_to_original(short_code: Annotated[str, Path(max_length=16)],
 
 @router.delete("/{short_code}")
 async def delete_link(short_code: Annotated[str, Path(max_length=16)],
-                      session: Annotated[AsyncSession, Depends(get_async_session)]):
+                      session: Annotated[AsyncSession, Depends(get_async_session)],
+                      user: Annotated[User, Depends(current_active_user)]):
     """Удаляет связь."""
     try:
         query = select(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
         result = await session.execute(query)
         await session.commit()
-        result.one()
+        link = result.one()
+
+        if (link.created_by_uuid is not None) and (link.created_by_uuid != user.id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not an owner of this link")
 
         # удаляем кэш, если есть
         cache_key = f"short_url:{short_code}"
@@ -188,13 +199,17 @@ async def delete_link(short_code: Annotated[str, Path(max_length=16)],
 @router.put("/{short_code}")
 async def update_link(short_code: Annotated[str, Path(max_length=16)],
                       original_url: Annotated[str, Query()],
-                      session: Annotated[AsyncSession, Depends(get_async_session)]):
+                      session: Annotated[AsyncSession, Depends(get_async_session)],
+                      user: Annotated[User, Depends(current_active_user)]):
     """Обновляет длинный адрес, на который ведет ссылка"""
     try:
         query = select(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
         result = await session.execute(query)
         await session.commit()
-        result.one()
+        link = result.one()
+
+        if (link.created_by_uuid is not None) and (link.created_by_uuid != user.id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not an owner of this link")
 
         original_url = validate_and_fix_url(original_url)
 
@@ -223,7 +238,7 @@ async def update_link(short_code: Annotated[str, Path(max_length=16)],
 # GET /links/{short_code}/stats - Статистика по ссылке
 @router.get("/{short_code}/stats")
 async def get_link_stats(short_code: Annotated[str, Path(max_length=16)],
-                      session: Annotated[AsyncSession, Depends(get_async_session)]):
+                         session: Annotated[AsyncSession, Depends(get_async_session)]):
     try:
 
         query = select(Link.__table__).where(Link.__table__.c.short_url == short_code) # type: ignore
