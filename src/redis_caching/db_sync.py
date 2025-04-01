@@ -1,6 +1,6 @@
 from database import get_async_session
 from sqlalchemy import update
-from shurl.schemas import Link
+from shurl.models import Link
 from logging import getLogger
 from typing import Dict, Any
 

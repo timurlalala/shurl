@@ -1,11 +1,14 @@
-from pydantic import BaseModel, Field
-from datetime import datetime, timezone
+from sqlalchemy import Column, Integer, DateTime, MetaData, String
+import sqlalchemy
+from database import Base
 
-class GetOriginalURLResponse(BaseModel):
-    original_url: str
-
-class ShortenedItem(BaseModel):
-    short_url: str
-    original_url: str
-    expires_at: datetime | None = Field(None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+class Link(Base):
+    __tablename__ = 'links'
+    id = Column(Integer, primary_key=True)
+    original_url = Column(String, nullable=False, index=True)
+    short_url = Column(String, nullable=False, unique=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=sqlalchemy.func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=sqlalchemy.func.now(), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    last_used = Column(DateTime(timezone=True), nullable=True)
+    clicks = Column(Integer, default=0, nullable=False)

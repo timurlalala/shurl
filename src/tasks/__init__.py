@@ -2,7 +2,7 @@ import asyncio
 from celery import Celery
 from sqlalchemy import delete
 from datetime import datetime, timedelta, timezone
-from shurl.schemas import Link
+from shurl.models import Link
 from database import get_async_session
 from config import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD
 from celery.schedules import crontab

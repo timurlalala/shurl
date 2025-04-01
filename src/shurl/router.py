@@ -12,8 +12,8 @@ import json
 
 from database import get_async_session
 from shurl.utils import generate_random_string, validate_and_fix_url
-from shurl.schemas import Link
-from shurl.models import ShortenedItem
+from shurl.models import Link
+from shurl.schemas import ShortenedItem
 
 from redis_caching import r, write_stats_to_db
 
