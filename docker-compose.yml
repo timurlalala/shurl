@@ -24,7 +24,7 @@ services:
     container_name: fastapi_app
     command: [ "/fastapi_app/docker/app.sh" ]
     ports:
-      - "9999:8000"
+      - ${APP_PORT}:8000
     depends_on:
       - db
       - redis

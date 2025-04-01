@@ -30,9 +30,6 @@ app.include_router(shurl_router)
 async def root():
     return {"message": "App healthy"}
 
-app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(process_expired_keys())
 
 if __name__ == "__main__":
     uvicorn.run("main:app", reload=False, host="0.0.0.0", log_level="info")

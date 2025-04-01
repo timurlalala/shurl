@@ -15,3 +15,6 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 
 SECRET = os.getenv("SECRET")
+
+APP_HOST = os.getenv("APP_HOST")
+APP_PORT = os.getenv("APP_PORT")

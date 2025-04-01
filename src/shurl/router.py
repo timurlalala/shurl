@@ -11,7 +11,7 @@ from logging import getLogger
 import json
 
 from database import get_async_session
-from shurl.utils import generate_random_string, validate_and_fix_url
+from shurl.utils import generate_random_string, validate_and_fix_url, generate_url_from_short_code
 from shurl.models import Link
 from shurl.schemas import ShortenedItem
 
@@ -63,7 +63,8 @@ async def shorten_link(original_url: Annotated[str, Query()],
                 else:
                     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Custom alias already exists")
 
-        return {"short_url": short_code}
+        return {"short_url": generate_url_from_short_code(short_code),
+                "short_code": short_code}
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
